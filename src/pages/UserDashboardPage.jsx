@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import useAuthStore from '../store/authStore.js'
+import useFinanceStore from '../store/financeStore.js'
 
-function IncomeSection({ incomeInput, onIncomeChange, onSaveIncome, monthlyIncome }) {
+function IncomeSection({ incomeInput, onIncomeChange, onSaveIncome, income }) {
   return (
     <section className="dashboard-section">
       <h3>1) Monthly Income</h3>
-      {monthlyIncome !== null && (
+      {income !== null && (
         <p>
-          Current income: <strong className="income">${monthlyIncome}</strong>
+          Current income: <strong className="income">${income.amount}</strong>
         </p>
       )}
       <form onSubmit={onSaveIncome}>
@@ -17,7 +19,7 @@ function IncomeSection({ incomeInput, onIncomeChange, onSaveIncome, monthlyIncom
           onChange={(event) => onIncomeChange(event.target.value)}
         />
         <button type="submit" className="btn-primary">
-          {monthlyIncome === null ? 'Save Income' : 'Update Income'}
+          {income === null ? 'Save Income' : 'Update Income'}
         </button>
       </form>
     </section>
@@ -124,52 +126,39 @@ function SummaryCards({ totalIncome, totalExpenses, remainingBalance }) {
 function UserDashboardPage() {
   const categories = ['Grocery', 'Rent', 'Phone Bill', 'Entertainment', 'Transportation', 'Other']
 
+  const email = useAuthStore((state) => state.email)
+  const { expenses, income, loading, fetchData, saveIncome, addExpense, updateExpense, deleteExpense } =
+    useFinanceStore()
+
   const [incomeInput, setIncomeInput] = useState('')
-  const [monthlyIncome, setMonthlyIncome] = useState(null)
   const [title, setTitle] = useState('')
   const [amount, setAmount] = useState('')
   const [category, setCategory] = useState('Grocery')
-  const [expenses, setExpenses] = useState([])
   const [editingId, setEditingId] = useState(null)
 
-  const handleSaveIncome = (event) => {
+  useEffect(() => {
+    if (email) fetchData(email)
+  }, [email])
+
+  const handleSaveIncome = async (event) => {
     event.preventDefault()
     const parsedIncome = Number(incomeInput)
-    if (Number.isNaN(parsedIncome) || parsedIncome < 0) {
-      return
-    }
-    setMonthlyIncome(parsedIncome)
+    if (Number.isNaN(parsedIncome) || parsedIncome < 0) return
+    await saveIncome(email, parsedIncome)
+    setIncomeInput('')
   }
 
-  const handleSubmitExpense = (event) => {
+  const handleSubmitExpense = async (event) => {
     event.preventDefault()
-
     const trimmedTitle = title.trim()
     const parsedAmount = Number(amount)
-
-    if (!trimmedTitle || Number.isNaN(parsedAmount) || parsedAmount < 0) {
-      return
-    }
+    if (!trimmedTitle || Number.isNaN(parsedAmount) || parsedAmount < 0) return
 
     if (editingId) {
-      setExpenses((prevExpenses) =>
-        prevExpenses.map((expense) =>
-          expense.id === editingId
-            ? { ...expense, title: trimmedTitle, amount: parsedAmount, category }
-            : expense,
-        ),
-      )
+      await updateExpense(editingId, trimmedTitle, parsedAmount, category)
       setEditingId(null)
     } else {
-      setExpenses((prevExpenses) => [
-        ...prevExpenses,
-        {
-          id: Date.now(),
-          title: trimmedTitle,
-          amount: parsedAmount,
-          category,
-        },
-      ])
+      await addExpense(email, trimmedTitle, parsedAmount, category)
     }
 
     setTitle('')
@@ -184,9 +173,8 @@ function UserDashboardPage() {
     setCategory(expense.category)
   }
 
-  const handleDelete = (expenseId) => {
-    setExpenses((prevExpenses) => prevExpenses.filter((expense) => expense.id !== expenseId))
-
+  const handleDelete = async (expenseId) => {
+    await deleteExpense(expenseId)
     if (editingId === expenseId) {
       setEditingId(null)
       setTitle('')
@@ -195,9 +183,11 @@ function UserDashboardPage() {
     }
   }
 
-  const totalIncome = monthlyIncome ?? 0
+  const totalIncome = income?.amount ?? 0
   const totalExpenses = expenses.reduce((sum, expense) => sum + expense.amount, 0)
   const remainingBalance = totalIncome - totalExpenses
+
+  if (loading) return <div className="page card"><p>Loading...</p></div>
 
   return (
     <div className="page card">
@@ -208,10 +198,10 @@ function UserDashboardPage() {
         incomeInput={incomeInput}
         onIncomeChange={setIncomeInput}
         onSaveIncome={handleSaveIncome}
-        monthlyIncome={monthlyIncome}
+        income={income}
       />
 
-      {monthlyIncome === null ? (
+      {income === null ? (
         <section className="dashboard-section">
           <p>Please add your monthly income to unlock expense management.</p>
         </section>
